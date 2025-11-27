@@ -82,6 +82,9 @@ def ensure_index():
             "template": {
                 "settings": {
                     "index.mode": "time_series",
+                    "index.translog.durability": "async",
+                    "index.translog.sync_interval": "10s",
+                    "index.refresh_interval": "5s",
                 },
                 "mappings": {
                     "properties": {

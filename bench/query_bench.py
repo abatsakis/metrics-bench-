@@ -12,35 +12,36 @@ SLEEP_BETWEEN = 0.5  # seconds
 
 QUERIES = [
     {
-        "name": "Q1_avg_fitler_1_host",
-        "promql": """avg_over_time(http_requests_qps{exported_instance="inst-00009"}[15m])""",
+        "name": "Q1_avg_status_code_1_host",
+        "promql": """avg by (status_code) (avg_over_time(http_requests_qps{exported_instance="inst-00004"}[15m]))""",
         "esql": """
-TS metrics-http
-| WHERE  @timestamp >= NOW() - 15 MINUTES
-  AND @timestamp <= NOW() AND instance == "inst-00004"
-| STATS avg_qps = AVG(http_requests_qps) BY status_code, method, job
+            TS metrics-http
+            | WHERE  @timestamp >= NOW() - 15 MINUTES
+              AND @timestamp <= NOW()
+              AND instance == "inst-00004"
+            | STATS avg_qps = AVG(http_requests_qps) BY status_code
 """,
     },
      {
-        "name": "Q2_avg_filter_100_hosts_step",
+        "name": "Q2_avg_status_code_100_hosts_wildcard",
         "skip": False,
         # Average over time + average across series
-        "promql": """avg_over_time(http_requests_qps{exported_instance=~"inst-001.*"}[5m])""",
+        "promql": """avg by (status_code) (avg_over_time(http_requests_qps{exported_instance=~"inst-001.*"}[5m]))""",
         "range_duration": "1h",
         "step": "5m",
         "esql": """
-TS metrics-http
-| WHERE @timestamp >= NOW() - 60 MINUTES 
-  AND @timestamp <= NOW() 
-  AND instance LIKE "inst-001%"
-| EVAL bucket = DATE_TRUNC(5 MINUTES, @timestamp)
-| STATS avg_qps = AVG(http_requests_qps) BY bucket, instance, status_code, method, job
+            TS metrics-http
+            | WHERE @timestamp >= NOW() - 60 MINUTES 
+              AND @timestamp <= NOW() 
+              AND instance LIKE "inst-001%"
+            | EVAL bucket = DATE_TRUNC(5 MINUTES, @timestamp)
+            | STATS avg_qps = AVG(http_requests_qps) BY bucket, status_code
 """,
     },
     {
         "name": "Q3_avg_no_filter_sorted",
         "skip": False,
-        "promql": """sort_desc(avg_over_time(http_requests_qps[5m]))""",
+        "promql": """sort_desc(last_over_time(http_requests_qps[5m]))""",
         "range_duration": "1h",
         "step": "5m",
         "esql": """
@@ -53,17 +54,15 @@ TS metrics-http
 """,
     },
     {
-        "name": "Q4_avg_4h_range_step",
-        "skip": False,
-        "promql": """avg(avg_over_time(http_requests_qps[5m])) by (status_code)""",
+        "name": "Q4_avg_status_code_4xx_5xx_wildcard",
+        "skip": True,
+        "promql": """avg by (exported_instance) (avg_over_time(http_requests_qps[5m]))""",
         "range_duration": "4h",
         "step": "5m",
         "esql": """
-TS metrics-http
-| WHERE @timestamp >= NOW() - 4 HOURS 
-  AND @timestamp <= NOW()
-| EVAL bucket = DATE_TRUNC(5 MINUTES, @timestamp)
-| STATS avg_qps = AVG(http_requests_qps) BY bucket, status_code
+            TS metrics-*
+ | WHERE @timestamp >= NOW() - 240 MINUTES AND @timestamp <= NOW() 
+ | STATS AVG(AVG_OVER_TIME(http_requests_qps)) BY instance, TBUCKET(5m)
 """,
     }
 ]

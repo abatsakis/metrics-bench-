@@ -92,14 +92,14 @@ Queries are defined in `bench/query_bench.py`. Current queries:
 
 | Query | Description | Time Range | Step |
 |-------|-------------|------------|------|
-| Q1 | Average for single instance | 15m | instant |
-| Q2 | Average for 100 instances (filtered) | 1h | 5m |
-| Q3 | Average all series with sorting | 1h | 5m |
-| Q4 | Average grouped by status_code | 4h | 5m |
+| Q1 | Average by status_code for single instance | 15m | instant |
+| Q2 | Average by status_code for ~100 instances (wildcard filter) | 1h | 5m |
+| Q3 | Last value for all series, sorted descending | 1h | 5m |
+| Q4 | Average by instance for 4xx/5xx status codes | 4h | 5m |
 
 Each query runs 5 times (configurable via `NUM_RUNS`) with 0.5s between runs.
 
-Set `"skip": True` on any query to skip execution.
+Set `"skip": True` on any query to skip execution. Queries with `range_duration` and `step` use Prometheus `/api/v1/query_range` instead of instant queries.
 
 ## Make Targets
 
@@ -126,7 +126,11 @@ Set `"skip": True` on any query to skip execution.
 
 ### Elasticsearch
 - Time Series Data Stream (TSDS) with trial license
-- Index pattern: `metrics-http-*`
+- Index pattern: `metrics-http*` (matches data stream and backing indices)
+- Performance settings:
+  - `index.translog.durability: "async"` - Async translog for faster writes
+  - `index.translog.sync_interval: "10s"` - Sync every 10 seconds
+  - `index.refresh_interval: "5s"` - Refresh every 5 seconds
 - Document structure:
   ```json
   {
@@ -138,6 +142,8 @@ Set `"skip": True` on any query to skip execution.
     "method": "GET"
   }
   ```
+- Dimensions: `job`, `instance`, `status_code`, `method` (marked as `time_series_dimension`)
+- Metric: `http_requests_qps` (marked as `time_series_metric: "gauge"`)
 
 ## Performance Tips
 
@@ -173,23 +179,54 @@ Ensure you see: `[metrics-gen] TSDS template and data stream ready`
 ### Prometheus shows `(no value)`
 For range queries, ensure `range_duration` and `step` are set in the query definition.
 
+### Label collision: `exported_instance` vs `instance`
+Prometheus automatically adds `instance` (scrape target) to all metrics. Since our metrics already export an `instance` label, Prometheus renames it to `exported_instance`. Use `exported_instance` in PromQL filters (e.g., `{exported_instance="inst-00000"}`).
+
 ## Example Output
 
+### Benchmark with verification (`make bench_verify`)
+
 ```
-=== Q2_avg_filter_100_hosts_step ===
+=== Q1_avg_status_code_1_host ===
 
 [Prometheus Result]:
-  {exported_instance=inst-00100, ...}: 95.234567 (last of 12 points)
-  {exported_instance=inst-00101, ...}: 98.123456 (last of 12 points)
-  ...
+  {exported_instance=inst-00004, status_code=200, ...}: 102.456789
 
 [Elasticsearch ES|QL Result]:
-  {avg_qps=95.234123, bucket=2024-01-15T10:00:00.000Z, instance=inst-00100, ...}
-  {avg_qps=98.122987, bucket=2024-01-15T10:00:00.000Z, instance=inst-00101, ...}
+  {avg_qps=102.451234, status_code=200}
+  {avg_qps=5.123456, status_code=500}
   ...
 
-Prometheus: p50=45.2 ms, p95=58.3 ms
-Elasticsearch ES|QL: p50=125.7 ms, p95=187.4 ms
+Prometheus: p50=12.3 ms, p95=18.5 ms
+Elasticsearch ES|QL: p50=25.7 ms, p95=35.2 ms
+```
+
+### Stats (`make stats`)
+
+```
+=========================================
+Data Stats
+=========================================
+
+Configuration:
+  Tick interval: 5s (TICK_SECONDS)
+  Prometheus scrape: 5s
+  Note: Assumes continuous ingestion (no gaps)
+
+Prometheus:
+  Active series: 20000
+
+Elasticsearch:
+  Total documents: 1440000
+  Time range: 2024-01-15T10:00:00.000Z to 2024-01-15T14:00:00.000Z
+
+Expected: 20,000 series (2000 instances × 5 status codes × 2 methods)
+
+Estimated time coverage:
+  ES docs / series / tick = ticks of data
+  1440000 / 20000 / 1 = ~72 ticks
+  At 5s/tick = ~360 seconds = ~6 minutes of data
+=========================================
 ```
 
 ## License

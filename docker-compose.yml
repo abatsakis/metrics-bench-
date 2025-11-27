@@ -8,6 +8,14 @@ services:
       - ES_JAVA_OPTS=-Xms2g -Xmx2g
     ports:
       - "9200:9200"
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
 
   prometheus:
     image: prom/prometheus:v3.7.3
@@ -19,6 +27,14 @@ services:
       - "9090:9090"
     depends_on:
       - metrics-gen
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
 
   metrics-gen:
     build: ./metrics-gen
@@ -43,3 +59,4 @@ services:
     environment:
       - PROM_URL=http://prometheus:9090
       - ES_URL=http://elasticsearch:9200
+
